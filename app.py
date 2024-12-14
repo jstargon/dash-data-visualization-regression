@@ -1,5 +1,4 @@
 import base64
-import os
 from dash import Dash, html, dcc, Input, Output, State
 import numpy as np
 import pandas as pd
@@ -14,6 +13,7 @@ from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error, r
 import plotly.express as px
 from sklearn.base import BaseEstimator, RegressorMixin
 from xgboost import XGBRegressor
+import os
 
 app = Dash(__name__)
 app.css.append_css({"external_url": "/assets/styles.css"})
@@ -55,6 +55,8 @@ app.layout = html.Div(children=[
 def load_dataset(contents, filename):
     #TODO: CHECK IF FILE IS CSV OR NOT AND OTHER ERROR HANDLING THINGS
     global df
+    if contents is None:
+        return ""
     content_type, content_string = contents.split(',')
     decoded = io.BytesIO(base64.b64decode(content_string))
     df = pd.read_csv(decoded)
@@ -122,6 +124,11 @@ def category_select(value):
 
 @app.callback(Output("categorical_graph", "figure"), Input("category_options", 'value'), State("column_dropdown", 'value'))
 def create_categorical_bar_graph(x_value, y_value):
+    if not x_value or not y_value:
+        return {
+            'data': [],
+            'layout': {'title': ""}
+        }
     grouped_df = df.groupby([x_value])[y_value].mean().reset_index()
     x = grouped_df[x_value]
     y = grouped_df[y_value]
@@ -203,6 +210,8 @@ def create_model_training(n_clicks, selected_features, target):
     global model
     global features
     features = selected_features
+    if n_clicks is None:
+        return ""
     if n_clicks > 0:
         #JUST DOING A SIMPLE MODEL FOR NOW
         #TODO: ADD MORE COMPLEX MODEL WITH PIPELINE, ONEHOT ENCODING, AND HANDLING MISSING VALUES
@@ -237,7 +246,6 @@ def create_model_training(n_clicks, selected_features, target):
             ('preprocessor', preprocessor),
             ('model', CustomXGBRegressor(objective='reg:squarederror', random_state=42))
         ])
-
         param_grid = {
             'model__n_estimators': [50, 100, 200],      # Number of trees
             'model__max_depth': [6, 10, 20],     # Maximum depth of each tree
@@ -255,9 +263,8 @@ def create_model_training(n_clicks, selected_features, target):
         
         grid_search.fit(X_train, y_train)
 
-
         model = grid_search.best_estimator_
-
+        
         # Make predictions
         y_pred = model.predict(X_test)
         r2 = r2_score(y_test, y_pred)
@@ -311,7 +318,6 @@ def predict(n_clicks, feature_input):
                 html.P(f"Error: {str(e)}")
             )
         )
-
 server = app.server
 
 if __name__ == '__main__':
