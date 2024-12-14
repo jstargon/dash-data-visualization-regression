@@ -246,24 +246,26 @@ def create_model_training(n_clicks, selected_features, target):
             ('preprocessor', preprocessor),
             ('model', CustomXGBRegressor(objective='reg:squarederror', random_state=42))
         ])
-        param_grid = {
-            'model__n_estimators': [50, 100, 200],      # Number of trees
-            'model__max_depth': [6, 10, 20],     # Maximum depth of each tree
-            'model__learning_rate': [0.01, 0.1, 0.2]      # Minimum samples to split an internal node
-        }
+        # param_grid = {
+        #     'model__n_estimators': [50, 100, 200],      # Number of trees
+        #     'model__max_depth': [6, 10, 20],     # Maximum depth of each tree
+        #     'model__learning_rate': [0.01, 0.1, 0.2]      # Minimum samples to split an internal node
+        # }
 
-        grid_search = GridSearchCV(
-            estimator=pipe,
-            param_grid=param_grid,
-            cv=5,
-            scoring = 'neg_mean_squared_error',
-            verbose=1,
-            error_score='raise'
-            )
+        # grid_search = GridSearchCV(
+        #     estimator=pipe,
+        #     param_grid=param_grid,
+        #     cv=5,
+        #     scoring = 'neg_mean_squared_error',
+        #     verbose=1,
+        #     error_score='raise'
+        #     )
         
-        grid_search.fit(X_train, y_train)
+        # grid_search.fit(X_train, y_train)
 
-        model = grid_search.best_estimator_
+        # model = grid_search.best_estimator_
+        model = pipe
+        model.fit(X_train, y_train)
         
         # Make predictions
         y_pred = model.predict(X_test)
