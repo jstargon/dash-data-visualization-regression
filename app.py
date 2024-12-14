@@ -1,4 +1,5 @@
 import base64
+import os
 from dash import Dash, html, dcc, Input, Output, State
 import numpy as np
 import pandas as pd
@@ -314,4 +315,5 @@ def predict(n_clicks, feature_input):
 server = app.server
 
 if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 8050))
     app.run(debug=True)
