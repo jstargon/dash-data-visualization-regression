@@ -23,6 +23,18 @@ df = pd.DataFrame()
 model = ""
 
 app.layout = html.Div(children=[
+    html.Div(
+        children=[
+            "Made for CS301 by Group 9: Srinesh Selvaraj, Parth Kabaria, John Argonza"
+        ],
+        style={
+            'text-align':'center',
+            'width':'100%',
+            'background-color':'#007bff',
+            'padding':'10px',
+            'color':'white'
+        }
+    ),
     dcc.Upload(
         id="upload_file",
         children=html.Button(
