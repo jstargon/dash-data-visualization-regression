@@ -14,6 +14,7 @@ import plotly.express as px
 from sklearn.base import BaseEstimator, RegressorMixin
 from xgboost import XGBRegressor
 import os
+import plotly.graph_objs as go
 
 app = Dash(__name__)
 app.css.append_css({"external_url": "/assets/styles.css"})
@@ -50,7 +51,29 @@ app.layout = html.Div(children=[
         id="select_target",
     ),
     html.Div(
-        id="select_category"
+        id="graphs",
+        className="graphs-container",
+        children=[
+            # Categorical Stuff
+            html.Div(
+                id="categorical_div",
+                style={'width': '48%', 'display': 'inline-block', 'vertical-align': 'top'}
+            ),
+            
+            # Correlation stuff
+            html.Div(
+                id="correlation_div",
+                style={'width': '48%', 'display': 'inline-block', 'vertical-align': 'top'}
+            )
+        ],
+        style={
+            'display': 'flex', 
+            'justify-content': 'space-between', 
+            'width': '100%'
+        }
+    ),
+    html.Div(
+        id="model_selection"
     ),
     html.Div(
         id="feature_checklist"
@@ -63,7 +86,8 @@ app.layout = html.Div(children=[
     )
 ])
 
-@app.callback(Output('select_target', 'children'), Input('upload_file', 'contents'), State('upload_file', 'filename'))
+# Once the file is uploaded, we load the dataset and show the target variable selection
+@app.callback(Output('select_target', 'children'), Input('upload_file', 'contents'), State('upload_file', 'filename')) 
 def load_dataset(contents, filename):
     #TODO: CHECK IF FILE IS CSV OR NOT AND OTHER ERROR HANDLING THINGS
     global df
@@ -71,7 +95,18 @@ def load_dataset(contents, filename):
         return ""
     content_type, content_string = contents.split(',')
     decoded = io.BytesIO(base64.b64decode(content_string))
-    df = pd.read_csv(decoded)
+    
+    
+    try:
+        df = pd.read_csv(decoded)
+    except (pd.errors.ParserError, UnicodeDecodeError):
+        decoded.seek(0) 
+        try:
+            df = pd.read_excel(decoded)
+        except Exception as e:
+            return html.Div(f"Failed to read the file: {str(e)}")
+    
+    
     return (
         html.Div([
             html.Label("Select target: "),
@@ -82,84 +117,112 @@ def load_dataset(contents, filename):
         ])
     )
 
-@app.callback(Output('select_category', 'children'), Input('column_dropdown', 'value'))
-def category_select(value):
+# This callback is used to create the categorical variable bar graph div and options
+@app.callback(Output('categorical_div', 'children'), Input('column_dropdown', 'value'))
+def create_cagtegorical_div(value):
     if value is not None:
-        return html.Div([
-            # Graphs
-            html.Div(
-                className="graphs-container",
-                children=[
-                    # Categorical Stuff
-                    html.Div(
-                        children=[
-                            html.Div(
-                                children=[
-                                    dcc.RadioItems(
-                                        id="category_options",
-                                        options=[
-                                            {'label': col, 'value': col}
-                                            for col in df.select_dtypes(exclude=['number']).columns
-                                        ],
-                                        inputStyle={"margin-right": "5px"},
-                                        labelStyle={"display": "inline-block", "margin-right": "15px"}
-                                    )
-                                ],
-                                style={
-                                    'text-align': 'center', 
-                                    'margin-bottom': '10px'
-                                }
-                            ),
-                            dcc.Graph(
-                                id="categorical_graph",
-                            )
-                        ],
-                        style={'width': '48%', 'display': 'inline-block', 'vertical-align': 'top'}
-                    ),
-                    # Correlation stuff
-                    html.Div(
-                        dcc.Graph(
-                            id="correlation_graph",
-                        ),
-                        style={'width': '48%', 'display': 'inline-block', 'vertical-align': 'top'}
-                    )
-                ],
-                style={
-                    'display': 'flex', 
-                    'justify-content': 'space-between', 
-                    'width': '100%'
+        variables= [{'label': col, 'value': col} for col in df.select_dtypes(exclude=['number']).columns]
+        if not variables:
+            return dcc.Graph(
+            id="categorical_graph",
+            figure={
+            'data': [],
+            'layout': go.Layout(title='No Categorical Variables to Analyze')
+            }
+        )
+        return [html.Div(
+            id="category_options_div",
+            children=[
+                dcc.RadioItems(
+                    id="category_options",
+                    options=variables,
+                    inputStyle={"margin-right": "5px"},
+                    labelStyle={"display": "inline-block", "margin-right": "15px"}
+                )
+            ],
+            style={
+                'text-align': 'center', 
+                'margin-bottom': '10px'
+            }
+        ),
+        dcc.Graph(
+            id="categorical_graph",
+        )]
+    
+# This callback is used to create the correlation bar graph                
+@app.callback(Output('correlation_div', 'children'), Input('column_dropdown', 'value'))
+def create_correlation_div(target):
+    if target is not None:
+        corr = df.select_dtypes(include=['number']).corr()
+        x = [col for col in df.select_dtypes(include=['number']) if col != target]  # Have x be the numerical variables and not the target variable
+        y = [corr.loc[feature, target] for feature in x] # Get the correlation values for the target variable
+        # Sort the values by correlation strength
+            # sorted_indices = np.argsort(np.abs(y))[::-1]
+            # x = [x[i] for i in sorted_indices]
+        return html.Div(
+            # Correlation stuff
+            dcc.Graph(
+                id="correlation_graph",
+                figure={
+                'data':[{'x':x, 'y':y, 'type':'bar'}],
+                'layout': go.Layout(title= f"Correlation strength of numerical variables with {target}")
                 }
-            )
-        ])
+            ),
+            
+        )
 
+# @app.callback(Output("correlation_graph", "figure"), Input("column_dropdown", "value"))
+# def create_correlation_bar_graph(target):
+#     corr = df.select_dtypes(include=['number']).corr()
+#     x = [col for col in df.select_dtypes(include=['number']) if col != target]  # Have x be the numerical variables and not the target variable
+#     y = [corr.loc[feature, target] for feature in x] # Get the correlation values for the target variable
+#     # Sort the values by correlation strength
+#         # sorted_indices = np.argsort(np.abs(y))[::-1]
+#         # x = [x[i] for i in sorted_indices]
+#     return{
+#         'data':[{'x':x, 'y':y, 'type':'bar'}],
+#         'layout': go.Layout(title= f"Correlation strength of numerical variables with {target}")
+#     }
 
-
+# This callback is used to create the cate bar graph
 @app.callback(Output("categorical_graph", "figure"), Input("category_options", 'value'), State("column_dropdown", 'value'))
 def create_categorical_bar_graph(x_value, y_value):
     if not x_value or not y_value:
         return {
             'data': [],
-            'layout': {'title': ""}
+            'layout': {'title':'No Categorical Variables to Analyze'}
         }
     grouped_df = df.groupby([x_value])[y_value].mean().reset_index()
     x = grouped_df[x_value]
     y = grouped_df[y_value]
     return{
         'data':[{'x':x, 'y':y, 'type':'bar'}],
-        'layout': {'title': f"Average {y_value} by {x_value}"}
-    }
-
-@app.callback(Output("correlation_graph", "figure"), Input("column_dropdown", "value"))
-def create_correlation_bar_graph(target):
-    corr = df.select_dtypes(include=['number']).corr()
-    x = [col for col in df.select_dtypes(include=['number'])]
-    y = [corr.loc[feature, target] for feature in x]
-    return{
-        'data':[{'x':x, 'y':y, 'type':'bar'}],
-        'layout': {'title': f"Correlation strength of numerical variables with {target}"}
+        'layout': go.Layout(title= f"Average {y_value} by {x_value}")
     }
 
 
+@app.callback(Output("model_checklist", "children"), Input("column_dropdown", "value"))
+def create_feature_list(value):
+    if value is not None:
+        feature_columns = [col for col in df.columns if col != value]
+        return([
+            dcc.Checklist(
+                id="feature_list",
+                options=[
+                    {'label': col, 'value': col}
+                    for col in feature_columns
+                ],
+                className='checklist-container'
+            ),
+            html.Div([
+                html.Button(
+                    "Train",
+                    id="train_button",
+                    className='train-button'
+                )
+            ], className='train-button-container')
+        ])
+        
 @app.callback(Output("feature_checklist", "children"), Input("column_dropdown", "value"))
 def create_feature_list(value):
     if value is not None:
@@ -217,7 +280,7 @@ class CustomXGBRegressor(BaseEstimator, RegressorMixin):
         self.model.set_params(**params)
         return self
 
-@app.callback(Output('train_model', 'children'), Input('train_button', 'n_clicks'), State('feature_list', 'value'), State('column_dropdown', 'value'))
+@app.callback(Output('train_model', 'children'), Input('train_button', 'n_clicks'), State('feature_list', 'value'), State('column_dropdown', 'value'))#, State('model_list', 'value'))
 def create_model_training(n_clicks, selected_features, target):
     global model
     global features
@@ -226,9 +289,13 @@ def create_model_training(n_clicks, selected_features, target):
         return ""
     if n_clicks > 0:
         #JUST DOING A SIMPLE MODEL FOR NOW
-        #TODO: ADD MORE COMPLEX MODEL WITH PIPELINE, ONEHOT ENCODING, AND HANDLING MISSING VALUES
         X = df[selected_features]
+        
+        # To clean the data in the target column, we will remove any rows with null values or non-finite values
         y = df[target]
+        mask = y.notnull() & np.isfinite(y)
+        y = y[mask]
+        X = X[mask]
         
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
         
@@ -254,30 +321,30 @@ def create_model_training(n_clicks, selected_features, target):
         )
         
         # Define the pipeline with preprocessing and model
-        pipe = Pipeline(steps=[
+        regressor_pipe = Pipeline(steps=[
             ('preprocessor', preprocessor),
             ('model', CustomXGBRegressor(objective='reg:squarederror', random_state=42))
         ])
-        # param_grid = {
-        #     'model__n_estimators': [50, 100, 200],      # Number of trees
-        #     'model__max_depth': [6, 10, 20],     # Maximum depth of each tree
-        #     'model__learning_rate': [0.01, 0.1, 0.2]      # Minimum samples to split an internal node
-        # }
+        param_grid = {
+            'model__n_estimators': [50, 100, 200],      # Number of trees
+            'model__max_depth': [6, 10, 20],     # Maximum depth of each tree
+            'model__learning_rate': [0.01, 0.1, 0.2]      # Minimum samples to split an internal node
+        }
 
-        # grid_search = GridSearchCV(
-        #     estimator=pipe,
-        #     param_grid=param_grid,
-        #     cv=5,
-        #     scoring = 'neg_mean_squared_error',
-        #     verbose=1,
-        #     error_score='raise'
-        #     )
+        grid_search = GridSearchCV(
+            estimator=regressor_pipe,
+            param_grid=param_grid,
+            cv=5,
+            scoring = 'neg_mean_squared_error',
+            verbose=1,
+            error_score='raise'
+            )
         
-        # grid_search.fit(X_train, y_train)
+        grid_search.fit(X_train, y_train)
 
-        # model = grid_search.best_estimator_
-        model = pipe
-        model.fit(X_train, y_train)
+        model = grid_search.best_estimator_
+        # model = regressor_pipe
+        # model.fit(X_train, y_train)
         
         # Make predictions
         y_pred = model.predict(X_test)
