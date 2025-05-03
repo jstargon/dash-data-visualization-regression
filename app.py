@@ -12,7 +12,7 @@ from sklearn.preprocessing import MinMaxScaler, OneHotEncoder, StandardScaler
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error, root_mean_squared_error
 import plotly.express as px
 from sklearn.base import BaseEstimator, RegressorMixin
-from xgboost import XGBRegressor
+from xgboost import XGBRegressor, XGBClassifier
 import os
 import plotly.graph_objs as go
 
@@ -87,7 +87,11 @@ app.layout = html.Div(children=[
 ])
 
 # Once the file is uploaded, we load the dataset and show the target variable selection
-@app.callback(Output('select_target', 'children'), Input('upload_file', 'contents'), State('upload_file', 'filename')) 
+@app.callback(
+    Output('select_target', 'children'), 
+    Input('upload_file', 'contents'),
+    State('upload_file', 'filename')
+    ) 
 def load_dataset(contents, filename):
     #TODO: CHECK IF FILE IS CSV OR NOT AND OTHER ERROR HANDLING THINGS
     global df
@@ -118,7 +122,10 @@ def load_dataset(contents, filename):
     )
 
 # This callback is used to create the categorical variable bar graph div and options
-@app.callback(Output('categorical_div', 'children'), Input('column_dropdown', 'value'))
+@app.callback(
+    Output('categorical_div', 'children'), 
+    Input('column_dropdown', 'value')
+    )
 def create_cagtegorical_div(value):
     if value is not None:
         variables= [{'label': col, 'value': col} for col in df.select_dtypes(exclude=['number']).columns]
@@ -150,7 +157,10 @@ def create_cagtegorical_div(value):
         )]
     
 # This callback is used to create the correlation bar graph                
-@app.callback(Output('correlation_div', 'children'), Input('column_dropdown', 'value'))
+@app.callback(
+    Output('correlation_div', 'children'), 
+    Input('column_dropdown', 'value')
+    )
 def create_correlation_div(target):
     if target is not None:
         corr = df.select_dtypes(include=['number']).corr()
@@ -172,7 +182,11 @@ def create_correlation_div(target):
         )
 
 # This callback is used to create the cate bar graph
-@app.callback(Output("categorical_graph", "figure"), Input("category_options", 'value'), State("column_dropdown", 'value'))
+@app.callback(
+    Output("categorical_graph", "figure"), 
+    Input("category_options", 'value'), 
+    State("column_dropdown", 'value')
+    )
 def create_categorical_bar_graph(x_value, y_value):
     if not x_value or not y_value:
         return {
@@ -190,7 +204,8 @@ def create_categorical_bar_graph(x_value, y_value):
 # This callback is used to select the model
 @app.callback(
     Output("model_selection", "children"), 
-    Input("column_dropdown", "value"))
+    Input("column_dropdown", "value")
+    )
 def select_model(value):
     if value is not None:
         variables= [
@@ -205,7 +220,8 @@ def select_model(value):
                         id="model_list",
                         options=variables,
                         inputStyle={"margin-right": "5px"},
-                        labelStyle={"display": "inline-block", "margin-right": "15px"}
+                        labelStyle={"display": "inline-block", "margin-right": "15px"},
+                        value='linear_regression'  # Default value
                     )
                 ],
                 style={
@@ -214,7 +230,10 @@ def select_model(value):
                 }
         )]
         
-@app.callback(Output("feature_checklist", "children"), Input("column_dropdown", "value"))
+@app.callback(
+    Output("feature_checklist", "children"), 
+    Input("column_dropdown", "value")
+    )
 def create_feature_list(value):
     if value is not None:
         feature_columns = [col for col in df.columns if col != value]
@@ -271,7 +290,13 @@ class CustomXGBRegressor(BaseEstimator, RegressorMixin):
         self.model.set_params(**params)
         return self
 
-@app.callback(Output('train_model', 'children'), Input('train_button', 'n_clicks'), State('feature_list', 'value'), State('column_dropdown', 'value'), State('model_list', 'value'))
+@app.callback(
+    Output('train_model', 'children'), 
+    Input('train_button', 'n_clicks'), 
+    State('feature_list', 'value'), 
+    State('column_dropdown', 'value'), 
+    State('model_list', 'value')
+    )
 def create_model_training(n_clicks, selected_features, target, model_type):
     global model
     global features
@@ -310,6 +335,17 @@ def create_model_training(n_clicks, selected_features, target, model_type):
                 ('cat', categorical_transformer, categoricals)
             ]
         )
+        
+        # For model selection 
+        model_map = {
+            'linear_regression': LinearRegression(),
+            'xgboost_regression': CustomXGBRegressor(objective='reg:squarederror', random_state=42),
+            'xgboost_classification': XGBClassifier(use_label_encoder=False, eval_metric='mlogloss', random_state=42)
+        }
+        
+        selected_model = model_map[model_type]
+        if selected_model is None:
+            return html.Div("")
         
         # Define the pipeline with preprocessing and model
         regressor_pipe = Pipeline(steps=[
@@ -365,7 +401,7 @@ def create_model_training(n_clicks, selected_features, target, model_type):
     Output('prediction_result', 'children'),
     Input('predict_button', 'n_clicks'),
     State('feature_input', 'value'),
-)
+    )
 def predict(n_clicks, feature_input):
     global model
     if n_clicks is None:
