@@ -171,19 +171,6 @@ def create_correlation_div(target):
             
         )
 
-# @app.callback(Output("correlation_graph", "figure"), Input("column_dropdown", "value"))
-# def create_correlation_bar_graph(target):
-#     corr = df.select_dtypes(include=['number']).corr()
-#     x = [col for col in df.select_dtypes(include=['number']) if col != target]  # Have x be the numerical variables and not the target variable
-#     y = [corr.loc[feature, target] for feature in x] # Get the correlation values for the target variable
-#     # Sort the values by correlation strength
-#         # sorted_indices = np.argsort(np.abs(y))[::-1]
-#         # x = [x[i] for i in sorted_indices]
-#     return{
-#         'data':[{'x':x, 'y':y, 'type':'bar'}],
-#         'layout': go.Layout(title= f"Correlation strength of numerical variables with {target}")
-#     }
-
 # This callback is used to create the cate bar graph
 @app.callback(Output("categorical_graph", "figure"), Input("category_options", 'value'), State("column_dropdown", 'value'))
 def create_categorical_bar_graph(x_value, y_value):
@@ -200,28 +187,32 @@ def create_categorical_bar_graph(x_value, y_value):
         'layout': go.Layout(title= f"Average {y_value} by {x_value}")
     }
 
-
-@app.callback(Output("model_checklist", "children"), Input("column_dropdown", "value"))
-def create_feature_list(value):
+# This callback is used to select the model
+@app.callback(
+    Output("model_selection", "children"), 
+    Input("column_dropdown", "value"))
+def select_model(value):
     if value is not None:
-        feature_columns = [col for col in df.columns if col != value]
-        return([
-            dcc.Checklist(
-                id="feature_list",
-                options=[
-                    {'label': col, 'value': col}
-                    for col in feature_columns
+        variables= [
+        {'label': 'Linear Regression', 'value': 'linear_regression'},
+        {'label': 'XGBoost Regression', 'value': 'xgboost_regression'},
+        {'label': 'XGBoost Classification', 'value': ' xgboost_classification'},
+                ]
+        return [html.Div(
+                id="model_options_div",
+                children=[
+                    dcc.RadioItems(
+                        id="model_list",
+                        options=variables,
+                        inputStyle={"margin-right": "5px"},
+                        labelStyle={"display": "inline-block", "margin-right": "15px"}
+                    )
                 ],
-                className='checklist-container'
-            ),
-            html.Div([
-                html.Button(
-                    "Train",
-                    id="train_button",
-                    className='train-button'
-                )
-            ], className='train-button-container')
-        ])
+                style={
+                    'text-align': 'center', 
+                    'margin-bottom': '10px'
+                }
+        )]
         
 @app.callback(Output("feature_checklist", "children"), Input("column_dropdown", "value"))
 def create_feature_list(value):
@@ -280,8 +271,8 @@ class CustomXGBRegressor(BaseEstimator, RegressorMixin):
         self.model.set_params(**params)
         return self
 
-@app.callback(Output('train_model', 'children'), Input('train_button', 'n_clicks'), State('feature_list', 'value'), State('column_dropdown', 'value'))#, State('model_list', 'value'))
-def create_model_training(n_clicks, selected_features, target):
+@app.callback(Output('train_model', 'children'), Input('train_button', 'n_clicks'), State('feature_list', 'value'), State('column_dropdown', 'value'), State('model_list', 'value'))
+def create_model_training(n_clicks, selected_features, target, model_type):
     global model
     global features
     features = selected_features
