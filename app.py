@@ -11,10 +11,11 @@ from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.preprocessing import MinMaxScaler, OneHotEncoder, StandardScaler
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error, root_mean_squared_error
 import plotly.express as px
-from sklearn.base import BaseEstimator, RegressorMixin
+from sklearn.base import BaseEstimator, RegressorMixin, ClassifierMixin
 from xgboost import XGBRegressor, XGBClassifier
 import os
 import plotly.graph_objs as go
+import json
 
 app = Dash(__name__)
 app.css.append_css({"external_url": "/assets/styles.css"})
@@ -209,9 +210,10 @@ def create_categorical_bar_graph(x_value, y_value):
 def select_model(value):
     if value is not None:
         variables= [
-        {'label': 'Linear Regression', 'value': 'linear_regression'},
-        {'label': 'XGBoost Regression', 'value': 'xgboost_regression'},
-        {'label': 'XGBoost Classification', 'value': ' xgboost_classification'},
+        {'label': 'Linear Regression', 'value': json.dumps({'main':'linear_regression', 'type': 'regression', 'grid_search': False})},
+        {'label': 'XGBoost Regression', 'value': json.dumps({'main':'xgboost_regression', 'type': 'regression', 'grid_search': True})},
+        {'label': 'XGBoost Classification', 'value': json.dumps({'main':'xgboost_classification', 'type': 'classification', 'grid_search': True})}
+        # More models to be added in the future
                 ]
         return [html.Div(
                 id="model_options_div",
@@ -221,7 +223,7 @@ def select_model(value):
                         options=variables,
                         inputStyle={"margin-right": "5px"},
                         labelStyle={"display": "inline-block", "margin-right": "15px"},
-                        value='linear_regression'  # Default value
+                        value=json.dumps({'main': 'linear_regression', 'type': 'regression', 'grid_search': False}) # Default value
                     )
                 ],
                 style={
@@ -270,7 +272,9 @@ class CustomXGBRegressor(BaseEstimator, RegressorMixin):
         )
 
     def fit(self, X, y, **fit_params):
-        return self.model.fit(X, y, **fit_params)
+        print(f"CustomXGBRegressor.fit() called with params: {self.get_params()}")
+        self.model.fit(X, y, **fit_params)
+        return self 
 
     def predict(self, X):
         return self.model.predict(X)
@@ -289,18 +293,74 @@ class CustomXGBRegressor(BaseEstimator, RegressorMixin):
         # Update the underlying XGBRegressor model
         self.model.set_params(**params)
         return self
+    
+    def __getattr__(self, name):
+        return getattr(self.model, name)
+    
+
+
+class CustomXGBClassifier(BaseEstimator, ClassifierMixin):
+    def __init__(self, n_estimators=100, max_depth=3, learning_rate=0.1, **kwargs):
+        # A custom wrapper for XGBClassifier to make it fully compatible with Scikit-learn.
+        self.n_estimators = n_estimators
+        self.max_depth = max_depth
+        self.learning_rate = learning_rate
+        self.kwargs = kwargs
+        self.model = XGBClassifier(
+            n_estimators=n_estimators,
+            max_depth=max_depth,
+            learning_rate=learning_rate,
+            **kwargs
+        )
+
+    def fit(self, X, y, **fit_params):
+        print(f"CustomXGBClassifier with params: {self.get_params()}")
+        self.model.fit(X, y, **fit_params)
+        return self 
+
+    def predict(self, X):
+        return self.model.predict(X)
+
+    def predict_proba(self, X):
+        return self.model.predict_proba(X)
+
+    def get_params(self, deep=True):
+        return {
+            "n_estimators": self.n_estimators,
+            "max_depth": self.max_depth,
+            "learning_rate": self.learning_rate,
+            **self.kwargs
+        }
+
+    def set_params(self, **params):
+        for key, value in params.items():
+            setattr(self, key, value)
+        self.model.set_params(**params)
+        return self
+
+    def __getattr__(self, name):
+        return getattr(self.model, name) 
+
+    
+    
+    
+
+
+
+
 
 @app.callback(
     Output('train_model', 'children'), 
     Input('train_button', 'n_clicks'), 
     State('feature_list', 'value'), 
     State('column_dropdown', 'value'), 
-    State('model_list', 'value')
+    State('model_list', 'value'),
     )
-def create_model_training(n_clicks, selected_features, target, model_type):
+def create_model_training(n_clicks, selected_features, target, model_type_json):
     global model
     global features
     features = selected_features
+    model_type_dict = json.loads(model_type_json)
     if n_clicks is None:
         return ""
     if n_clicks > 0:
@@ -333,54 +393,86 @@ def create_model_training(n_clicks, selected_features, target, model_type):
             transformers=[
                 ('num', numeric_transformer, numericals), # num is just a label or a name for the transformer.
                 ('cat', categorical_transformer, categoricals)
-            ]
+            ],
+            sparse_threshold=0
         )
         
         # For model selection 
         model_map = {
             'linear_regression': LinearRegression(),
             'xgboost_regression': CustomXGBRegressor(objective='reg:squarederror', random_state=42),
-            'xgboost_classification': XGBClassifier(use_label_encoder=False, eval_metric='mlogloss', random_state=42)
+            'xgboost_classification': CustomXGBClassifier(eval_metric='mlogloss', random_state=42)
         }
         
-        selected_model = model_map[model_type]
+        selected_model = model_map[model_type_dict['main']]
         if selected_model is None:
             return html.Div("")
         
         # Define the pipeline with preprocessing and model
         regressor_pipe = Pipeline(steps=[
             ('preprocessor', preprocessor),
-            ('model', CustomXGBRegressor(objective='reg:squarederror', random_state=42))
+            ('model', selected_model)
         ])
-        param_grid = {
+        
+        if model_type_dict['grid_search']:
+            param_grid = {
             'model__n_estimators': [50, 100, 200],      # Number of trees
             'model__max_depth': [6, 10, 20],     # Maximum depth of each tree
             'model__learning_rate': [0.01, 0.1, 0.2]      # Minimum samples to split an internal node
-        }
+            }
 
-        grid_search = GridSearchCV(
-            estimator=regressor_pipe,
-            param_grid=param_grid,
-            cv=5,
-            scoring = 'neg_mean_squared_error',
-            verbose=1,
-            error_score='raise'
-            )
-        
-        grid_search.fit(X_train, y_train)
-
-        model = grid_search.best_estimator_
-        # model = regressor_pipe
-        # model.fit(X_train, y_train)
+            if model_type_dict['type'] == 'classification':
+                score= 'accuracy'
+            else:
+                score= 'neg_mean_squared_error'
+            
+            grid_search = GridSearchCV(
+                estimator=regressor_pipe,
+                param_grid=param_grid,
+                cv=5,
+                scoring = score,
+                verbose=1,
+                error_score='raise'
+                )
+            
+            grid_search.fit(X_train, y_train)
+            model = grid_search.best_estimator_
+        else:
+            regressor_pipe.fit(X_train, y_train)
+            model=regressor_pipe
         
         # Make predictions
         y_pred = model.predict(X_test)
+     
+    lines = []    
+        
+    if model_type_dict['type'] == 'classification':
+        accuracy = model.score(X_test, y_test)
+        lines.append(f"Accuracy: {str(accuracy)}")
+    else:
         r2 = r2_score(y_test, y_pred)
+        lines.append(f"R^2 score: {str(r2)}")
+        
+    if model_type_dict['grid_search']:
+        best_params = grid_search.best_params_
+        lines.append(f"Best parameters: {best_params}")
+    else:
+        estimator = model.named_steps['model'] # Get the model from inside the pipeline
+        coefficients = estimator.coef_
+        intercept = estimator.intercept_
+        feature_names = model.named_steps['preprocessor'].get_feature_names_out() # Get the feature names from the preprocessor just in case to handle one hot encoding and other things
+
+        lines.append(f"Coefficients:")
+        for fname, coef_val in zip(feature_names, coefficients):
+            lines.append(f"  {fname}: {coef_val}") 
+
+        lines.append(f"Intercept: {intercept}")
+
         
     return(
         html.Div([
             html.Div(
-                html.P("R^2 score: "+str(r2)),
+                [html.P(line) for line in lines],
                 style={'text-align':'center', 'margin-top':'20px'}
             ),
             html.Div([
