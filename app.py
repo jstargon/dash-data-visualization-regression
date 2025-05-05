@@ -28,7 +28,7 @@ app.layout = html.Div(children=[
     html.Div(
         id="header",
         children=[
-            "Made for CS301 by Group 9: Srinesh Selvaraj, Parth Kabaria, John Argonza"
+            "Interactive Data Science Web App for Real-Time Predictions and Data Analysis",
         ]
     ),
     dcc.Upload(
